@@ -1899,7 +1899,9 @@ body.sim-mode{
   };
   const med=medBerth(.5,'cruiser31'),medYacht=medBerth(.5,'motorYacht42'),medSmall=medBerth(.5,'inboard30');
   const medNeighbours=[.22,.78].map((t,i)=>{const b=medBerth(t,'inboard30');return npc('med-neighbour-'+i,b.x,b.y,b.heading,'inboard30')});
-  const gasNeighbours=[npc('fuel-west',4.30,4.72,0,'bowrider21'),npc('fuel-east',4.79,4.72,0,'bowrider21')];
+  const fuelGapUnits=7/(connectedMarina.world.widthFt/1000);
+  const fuelSpacing=(BOATS.inboard30.render.lengthUnits/2+BOATS.bowrider21.render.lengthUnits/2+fuelGapUnits)/1000;
+  const gasNeighbours=[npc('fuel-west',4.545-fuelSpacing,4.72,0,'bowrider21'),npc('fuel-east',4.545+fuelSpacing,4.72,0,'bowrider21')];
   const crowdedNorth=[npc('north-yacht-west',.86,5.14,270,'motorYacht42'),npc('north-yacht-east',1.15,5.14,270,'motorYacht42')];
   const mapping={
     gasDockArrival:{name:'Gas Dock Arrival',spawn:[4.55,5.5,270],target:berth(4.35,4.70,.4,.075,'C · GAS DOCK'),description:'In calm water, approach the south face of the broad fuel pier. Settle alongside and secure with two lines.',obstacles:[]},
@@ -1908,21 +1910,55 @@ body.sim-mode{
     westSlipCrossCurrent:{name:'West Pier Cross-Current',spawn:[3.55,3.95,270],target:berth(3.935,2.85,.055,.30,'C · WEST PIER'),description:'Bring the 31 ft cruiser alongside the west face of the long fuel jetty in wind and cross-current. Hold position and secure with two lines.',obstacles:[npc('west-neighbour',3.9625,2.5,270,'inboard30')]},
     doubleTTightDeparture:{name:'Big Yacht Tight Departure',spawn:[1.005,5.14,270],target:berth(1.3,4.1,.65,.35,'CLEAR FAIRWAY',true),description:'Cast off the 55 ft yacht from an E-section large-boat slip between neighbours. Use engines and bow thruster to clear the berth in strong wind and current.',obstacles:crowdedNorth},
     gasDockSqueeze:{spawn:[4.55,5.45,270],target:berth(4.47,4.70,.15,.07,'C · FUEL GAP'),description:'Place the single-engine bowrider between two boats at the fuel pier in strong wind and current. Secure with two lines.',obstacles:[npc('squeeze-west',4.40,4.72,0,'bowrider21'),npc('squeeze-east',4.69,4.72,0,'bowrider21')]},
-    liveTrafficDeparture:{spawn:[4.545,4.72,0],target:berth(6.23,7.76,.4,.5,'F · SOUTH EXIT',true),description:'Cast off from the fuel pier, yield to a departing boat, and make your way down the eastern fairway to the marina entrance.',obstacles:gasNeighbours},
+    liveTrafficDeparture:{name:'Windy Fuel Dock Departure',spawn:[4.545,4.72,0],target:berth(6.23,7.76,.4,.5,'F · SOUTH EXIT',true),description:'Cast off from the fuel pier, yield to a departing boat, and make your way down the eastern fairway to the marina entrance.',obstacles:gasNeighbours},
     medWindyArrival:{spawn:[4.25,6.85,105],target:berth(med.x-.07,med.y-.08,.14,.16,'D · MED BERTH'),description:'Approach the diagonal Med quay in a crosswind. Drop anchor, reverse stern-to, and attach the paired stern lines.',obstacles:medNeighbours},
     medCrowdedYachtDeparture:{spawn:[medYacht.x,medYacht.y,285],target:berth(6.23,7.76,.4,.5,'F · SOUTH EXIT',true),description:'Release the paired stern lines, recover the anchor, and guide the 55 ft yacht past neighbouring boats and through the entrance.',obstacles:medNeighbours,startAnchor:{x:medYacht.x+.05,y:medYacht.y-.31,slackFt:2,mode:'deployed'}},
     precisionAnchorDrop:{spawn:[4.3,6.70,105],target:berth(medSmall.x-.065,medSmall.y-.075,.13,.15,'D · MED BERTH'),anchorDropZone:berth(medSmall.x-.025,medSmall.y-.43,.13,.18,'DROP ANCHOR'),description:'Drop the anchor inside the orange zone, then reverse the twin-inboard cruiser between neighbours to the diagonal Med quay and attach paired stern lines.',obstacles:medNeighbours}
   };
   for(const [key,config] of Object.entries(mapping)){
     const level=LEVELS[key];level.marina='largeMarina';level.spawnId=levelSpawn('challenge-'+key,...config.spawn);
-    level.target=config.target;level.description=config.description;if(config.name)level.name=config.name;
-    level.obstacleLayout=config.obstacles;level.levelObstacles=[];
+    level.target=config.target;
+    if(level.requireAnchor){const q=connectedMarina.dockPolygons.find(p=>p.id==='poly0').points;
+      level.target.rotation=Math.atan2((q[2][1]-q[3][1])*600,(q[2][0]-q[3][0])*1000)*180/Math.PI;}
+    level.description=config.description;if(config.name)level.name=config.name;
+    level.obstacleLayout=config.obstacles.map(ob=>({...ob}));level.levelObstacles=[];
     level.otherBoats=config.obstacles.length?'medium':'none';
     if(config.anchorDropZone)level.anchorDropZone=config.anchorDropZone;
     if(config.startAnchor)level.startAnchor=config.startAnchor;
     if(key==='crowdedGasDeparture')level.startFenders='port';
   }
   MOVING_TRAFFIC_ROUTES.largeMarina=[{id:'challenge-departure',level:3,boatKey:'bowrider21',speedKt:2.4,behavior:'exit',points:[[5.4,5.0],[5.4,5.55],[6.35,6.4],[6.4,7.4],[6.4,8.5],[6.4,8.9]]}];
+
+
+  function populateChallengeTraffic(){
+    const slots=buildLargeMarinaBerthSlots();
+    const m=MARINAS.largeMarina;
+    const hull=(ob)=>{const a=ob.heading*Math.PI/180;return BOATS[ob.boatKey].collisionShapeUnits.map(([x,y])=>({x:ob.x*1000+x*Math.cos(a)-y*Math.sin(a),y:ob.y*600+x*Math.sin(a)+y*Math.cos(a)}))};
+    const solids=[...m.docks.map(d=>rectPolyN(d)),...m.dockPolygons.map(p=>p.points.map(([x,y])=>({x,y}))),...m.landPolygons.map(p=>p.points.map(([x,y])=>({x,y})))].map(p=>p.map(v=>({x:v.x*1000,y:v.y*600})));
+    const bounds=p=>({minX:Math.min(...p.map(v=>v.x)),maxX:Math.max(...p.map(v=>v.x)),minY:Math.min(...p.map(v=>v.y)),maxY:Math.max(...p.map(v=>v.y))});
+    const overlap=(a,b)=>{const aa=a._bounds||(a._bounds=bounds(a)),bb=b._bounds||(b._bounds=bounds(b));return aa.maxX>=bb.minX && bb.maxX>=aa.minX && aa.maxY>=bb.minY && bb.maxY>=aa.minY && polygonsOverlapGeneral(a,b)};
+    for(const [key,l] of Object.entries(LEVELS)){
+      const crowded=[2,5,6,7,9,10].includes(l.number),fraction=crowded?.8:.45;
+      const spawn=m.spawnPoints.find(p=>p.id===l.spawnId),target=l.target;
+      const existing=l.obstacleLayout;
+      const occupied=existing.map(hull);
+      for(let i=0;i<slots.length;i++){
+        if(((i*37+11)%100)/100>fraction)continue;
+        const slot=slots[i];
+        // Keep target, start and the manoeuvring approach free; deliberate neighbours stay.
+        if(Math.hypot((slot.x-spawn.x)*1000,(slot.y-spawn.y)*600)<200)continue;
+        if(Math.hypot((slot.x-target.x-target.w/2)*1000,(slot.y-target.y-target.h/2)*600)<200)continue;
+        const options=['inboard30','cruiser31','bowrider21','runabout18'].filter(k=>BOATS[k].dimensions.lengthFt<=slot.maxLengthFt && BOATS[k].dimensions.beamFt<=slot.maxBeamFt-.5);
+        if(!options.length)continue;
+        const ob={...slot,id:'level-traffic-'+i,boatKey:options[i%options.length]};
+        const poly=hull(ob);
+        if(solids.some(p=>overlap(poly,p)))continue;
+        if(occupied.some(other=>overlap(poly,other)))continue;
+        existing.push(ob);occupied.push(poly);
+      }
+      l.otherBoats=crowded?'high':'medium';
+    }
+  }
 
   function activeBoat(){ return BOATS[activeBoatKey]; }
   function activeMarina(){ return MARINAS[activeMarinaKey]; }
@@ -2590,6 +2626,27 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     ctx.fillStyle='#d8e9e7';ctx.font='11px system-ui';
     for(const [label,x,y] of [['A',105,60],['B',312,130],['C',238,120],['D',220,258],['E',74,253],['F',355,256]])ctx.fillText(label,x/420*240,y/320*183);
     ctx.fillText('N ↑',212,14);
+    // Draw in the same north-up world coordinates as the marina and boat.
+    if(activeGameMode==='play' && activeLevelKey){
+      const level=LEVELS[activeLevelKey];
+      const markZone=(zone,color,anchor=false)=>{
+        if(!zone)return;
+        const x=zone.x*1000*sx,y=zone.y*600*sy,w=zone.w*1000*sx,h=zone.h*600*sy;
+        const cx=x+w/2,cy=y+h/2;
+        ctx.save();ctx.fillStyle=color;ctx.globalAlpha=.3;ctx.translate(cx,cy);ctx.rotate((zone.rotation||0)*Math.PI/180);ctx.translate(-cx,-cy);ctx.fillRect(x,y,w,h);
+        ctx.globalAlpha=1;ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.strokeRect(x,y,w,h);
+        // Keep narrow berths easy to locate even at the phone mini-map size.
+        ctx.beginPath();
+        if(anchor){ctx.moveTo(cx,cy-6);ctx.lineTo(cx+6,cy);ctx.lineTo(cx,cy+6);ctx.lineTo(cx-6,cy);ctx.closePath();}
+        else ctx.arc(cx,cy,6,0,Math.PI*2);
+        ctx.strokeStyle='#09232e';ctx.lineWidth=3.5;ctx.stroke();
+        ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.stroke();ctx.restore();
+      };
+      markZone(level?.anchorDropZone,'#ffb454',true);
+      markZone(level?.target,level?.type==='departure'?'#73e6a6':'#ffe16a');
+      c.setAttribute('aria-label','North-up marina overview. '+(level?.type==='departure'?'Green exit target.':'Yellow docking target.')+(level?.anchorDropZone?' Orange diamond marks the anchor-drop zone.':''));
+    }else c.setAttribute('aria-label','North-up marina overview');
+
     ctx.save();ctx.translate(state.x*1000*sx,state.y*600*sy);ctx.rotate(state.a*Math.PI/180);ctx.fillStyle='#ffe28a';ctx.beginPath();ctx.moveTo(6,0);ctx.lineTo(-4,-3);ctx.lineTo(-2,0);ctx.lineTo(-4,3);ctx.closePath();ctx.fill();ctx.restore();
   }
   window.addEventListener('resize',()=>{cameraView.initialized=false;updateCamera(true);});
@@ -2979,6 +3036,8 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
 
   function pointInRect(rect,x,y){
     if(!rect) return false;
+    if(rect.rotation){const a=-rect.rotation*Math.PI/180,cx=rect.x+rect.w/2,cy=rect.y+rect.h/2,dx=(x-cx)*1000,dy=(y-cy)*600;
+      x=cx+(dx*Math.cos(a)-dy*Math.sin(a))/1000;y=cy+(dx*Math.sin(a)+dy*Math.cos(a))/600;}
     return x>=rect.x && x<=rect.x+rect.w && y>=rect.y && y<=rect.y+rect.h;
   }
 
@@ -3007,6 +3066,8 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     levelTargetZone.style.top=worldRenderY(t.y)+'px';
     levelTargetZone.style.width=(t.w*WORLD_CANVAS.width)+'px';
     levelTargetZone.style.height=(t.h*WORLD_CANVAS.height)+'px';
+    levelTargetZone.style.transformOrigin='center';
+    levelTargetZone.style.transform=`rotate(${t.rotation||0}deg)`;
     levelTargetZone.classList.toggle('exit',t.style==='exit');
     levelTargetLabel.textContent=t.label||'TARGET';
     const az=level.anchorDropZone;
@@ -3148,7 +3209,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     if(t){
       parts.push(
         `<rect class="thumbTarget${t.style==='exit'?' exit':''}" `+
-        `x="${t.x*1000}" y="${t.y*600}" width="${t.w*1000}" height="${t.h*600}" rx="12"/>`
+        `x="${t.x*1000}" y="${t.y*600}" width="${t.w*1000}" height="${t.h*600}" rx="12" transform="rotate(${t.rotation||0} ${(t.x+t.w/2)*1000} ${(t.y+t.h/2)*600})"/>`
       );
     }
 
@@ -3278,6 +3339,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     // The departure challenge begins secured to the gas dock. Attachment needs
     // a visible water viewport, so create those lines one animation frame later.
     requestAnimationFrame(()=>{
+      render();
       releaseAllLines();
       if(level.startAnchor) configureLevelStartAnchor(level);
       for(const line of level.startLines||[]) attachLine(line);
@@ -4139,29 +4201,20 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
       const T=thrust*setting*(setting<0 ? propulsion.reverseEfficiency : 1);
 
       if(propulsion.type==='twinInboardRudder'){
-        // Fixed shaft: propeller thrust remains parallel to the keel in both
-        // ahead and reverse. Because each shaft is offset from centreline,
-        // differential throttle naturally creates a yawing moment.
-        addForce(fwdx*T, fwdy*T, DRIVE_X, side*ENGINE_Y);
-
-        // Prop walk is deliberately a PURE ROTATIONAL effect here: it changes
-        // angular velocity but adds no forward, reverse, or lateral velocity.
-        // The two shafts are assumed to counter-rotate, so equal throttle on
-        // both engines cancels most prop walk. With one engine engaged, or one
-        // ahead and the other astern, the walk moments can reinforce each other.
-        const walkGain = setting < 0
-          ? propulsion.propWalkYawGainReverse
-          : propulsion.propWalkYawGainAhead;
-        state.omega += side * setting * walkGain * dt;
-
-        // Prop wash over the rudder supplies most low-speed steering authority
-        // in ahead. In reverse the flow reaches the rudder poorly, so authority
-        // is intentionally small. Negative steer = port helm, which creates a
-        // starboard force at the stern and turns the bow to port.
-        const steerSin=Math.sin(steerRad);
-        const washGain=setting>0 ? propulsion.rudderWashGain : propulsion.reverseRudderGain;
-        const lateral=-Math.abs(T)*steerSin*washGain;
-        addForce(rightx*lateral, righty*lateral, propulsion.rudderX, side*ENGINE_Y);
+        // Ahead prop wash is redirected by the rudder. Astern thrust follows
+        // the fixed shaft and is not steered by the rudder.
+        if(setting>0){
+          const effectiveRudder=steerRad*(propulsion.aheadRudderDeflectionGain??1.8);
+          const forward=T*Math.cos(effectiveRudder);
+          const lateral=-T*Math.sin(effectiveRudder);
+          addForce(fwdx*forward+rightx*lateral,fwdy*forward+righty*lateral,
+            propulsion.rudderX,side*ENGINE_Y);
+        }else{
+          addForce(fwdx*T,fwdy*T,DRIVE_X,side*ENGINE_Y);
+        }
+        // Counter-rotating shaft walk reinforces differential engine torque.
+        const walkGain=setting<0?propulsion.propWalkYawGainReverse:propulsion.propWalkYawGainAhead;
+        state.omega-=side*setting*walkGain*dt;
         return;
       }
 
@@ -4449,26 +4502,30 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
       ...marina.docks.map(d=>rectPolyN(d)),
       ...(marina.collisionDocks||[]).map(d=>rectPolyN(d)),
       ...(marina.solidAreas||[]).map(a=>rectPolyN(a)),
+      ...(marina.dockPolygons||[]).map(p=>p.points.map(([x,y])=>({x,y}))),
       ...activeObstacleBoats.map(ob=>obstacleHullPolyN(ob,r))
     ];
 
     for(const [sideName,sideSign] of [['port',-1],['stbd',1]]){
       if(!fenderState[sideName]) continue;
       for(const station of fenderStations){
-        const xFt=station*boatLen;
-        const yFt=sideSign*(halfBeam+fcfg.radiusFt*.35);
-        const pxN=state.x+(fwdx*xFt+rightx*yFt)/wx;
-        const pyN=state.y+(fwdy*xFt+righty*yFt)/wy;
+        const xUnits=station*activeBoat().render.lengthUnits;
+        const yUnits=sideSign*(activeBoat().render.beamUnits/2+fcfg.radiusFt*.35*1000/wx);
+        const xFt=xUnits*wx/1000;
+        const yFt=yUnits*wy/600;
+        const pxN=state.x+(fwdx*xUnits+rightx*yUnits)/1000;
+        const pyN=state.y+(fwdy*xUnits+righty*yUnits)/600;
         let near=null;
         for(const poly of contactPolys){
           const n=nearestPointOnPolyFt(poly,pxN,pyN);
+          if(pointInPolygon({x:pxN,y:pyN},poly)){n.nx=-n.nx;n.ny=-n.ny;n.dist=-n.dist;}
           if(!near || n.dist<near.dist) near=n;
         }
         if(!near || near.dist>=fcfg.radiusFt) continue;
 
         const compression=fcfg.radiusFt-near.dist;
-        const rxFt=fwdx*xFt+rightx*yFt;
-        const ryFt=fwdy*xFt+righty*yFt;
+        const rxFt=(pxN-state.x)*wx;
+        const ryFt=(pyN-state.y)*wy;
         const omegaRad=state.omega*Math.PI/180;
         const pointVx=state.vx*wx-omegaRad*ryFt;
         const pointVy=state.vy*wy+omegaRad*rxFt;
@@ -4853,6 +4910,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
       updateCamera(true);
     };
   }
+  populateChallengeTraffic();
   populateSetupControls();renderMarina();applyScenario(activeScenarioKey);showHomeScreen();
   render();
   window.mvp={get state(){return state},physics,render,collisionInfoAt,activeMarina,activeBoat,updateCamera,get camera(){return cameraView}};
