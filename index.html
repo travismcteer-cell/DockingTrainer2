@@ -861,9 +861,10 @@ body.sim-mode{
 #cameraTools{position:absolute;left:8px;bottom:8px;z-index:10;background:#0a202de8;padding:7px 10px;border-radius:7px;display:flex;gap:15px;align-items:center;font-size:12px;max-width:calc(100% - 16px)}
 #cameraTools label{display:flex;gap:6px;align-items:center;}#quickSpawn{max-width:155px;background:#193a49;color:#eef6f7;padding:5px;border:1px solid #627d86;border-radius:4px;}
 #zoomToggle,#miniMapToggle{background:#193a49;color:#eef6f7;padding:5px 9px;border:1px solid #627d86;border-radius:4px;font-weight:700;cursor:pointer}#zoomToggle.active,#miniMapToggle.active{background:#e5eef1;color:#17333a;border-color:#a8bbc2}
-#cameraToggle,#playModeBtn,#instructionsModeBtn,#homeFromSetup{display:none!important}
+#cameraToggle{display:none!important}
 @media(max-width:600px){#miniPanel{width:115px;}#cameraTools{gap:5px;flex-wrap:nowrap;}#quickSpawn{max-width:135px}}
 
+#dockMap .entranceBreakwall{fill:url(#marinaTexture-cobble);stroke:#454e48;stroke-width:3;filter:url(#dockShadow)}
 /* Small cached procedural tiles, anchored to the existing world SVG. */
 #worldLayer{background-image:none}
 #dockMap .dockShape,#dockMap .piling{fill:url(#marinaTexture-wood)}
@@ -1146,7 +1147,7 @@ body.sim-mode{
 
       <div class="card cameraLagCard">
         <div class="cameraLagLabel"><span>Camera catch-up</span><output id="lagVal">1.00 s</output></div>
-        <input aria-label="Camera catch-up time" id="cameraLag" type="range" min="0.5" max="5" step="0.05" value="1">
+        <input aria-label="Camera catch-up time" id="cameraLag" type="range" min="0.5" max="10" step="0.05" value="1">
       </div>
 
     </div>
@@ -1276,10 +1277,8 @@ body.sim-mode{
         fullPowerTurnRadiusFt: 30,
         turnCalibrationResponse: 1.45
       },
-      collisionShapeUnits: [
-        [96,0],[72,20],[29,29],[-50,29],[-88,22],[-93,0],
-        [-88,-22],[-50,-29],[29,-29],[72,-20]
-      ]
+      // Convex silhouette traced from this yacht sprite, including the square stern platform.
+      collisionShapeUnits: [[-95.11, 8.26], [-95.02, -7.49], [-92.21, -19.96], [-91.15, -21.12], [-49.1, -25.66], [-23.68, -27.4], [22.52, -27.89], [42.05, -26.15], [51.91, -24.41], [66.21, -20.44], [78.49, -14.84], [83.71, -11.55], [95.02, -0.05], [84.19, 11.74], [77.33, 16.19], [71.82, 18.9], [60.9, 22.67], [45.62, 25.57], [21.17, 27.79], [-8.89, 27.79], [-49.01, 25.57], [-91.34, 20.93], [-92.21, 19.77]]
     },
     inboard30: {
       name: "30 ft Twin Inboard Cruiser",
@@ -1885,6 +1884,46 @@ body.sim-mode{
   activeMarinaKey='largeMarina'; activeSpawnId='a';
   for(const sc of Object.values(SCENARIOS)){sc.boat='cruiser31';sc.marina='largeMarina';sc.spawnId='a';sc.otherBoats='none';sc.movingTraffic='off';}
 
+
+  // Reuse original difficulty, scoring and completion rules in the connected marina.
+  const connectedMarina=MARINAS.largeMarina;
+  const levelSpawn=(id,x,y,heading)=>{connectedMarina.spawnPoints.push({id,name:'Challenge start',x,y,heading});return id};
+  const berth=(x,y,w,h,label,exit=false)=>({x,y,w,h,label,style:exit?'exit':'dock'});
+  const npc=(id,x,y,heading,boatKey='cruiser31')=>({id,x,y,heading,boatKey});
+  const medBerth=(t,boatKey)=>{
+    const wall=connectedMarina.dockPolygons.find(p=>p.id==='poly0');
+    const a=wall.points[3],b=wall.points[2],angle=285*Math.PI/180;
+    const offset=BOATS[boatKey].render.lengthUnits/2+8;
+    return {x:a[0]+(b[0]-a[0])*t+Math.cos(angle)*offset/1000,
+      y:a[1]+(b[1]-a[1])*t+Math.sin(angle)*offset/600,heading:285};
+  };
+  const med=medBerth(.5,'cruiser31'),medYacht=medBerth(.5,'motorYacht42'),medSmall=medBerth(.5,'inboard30');
+  const medNeighbours=[.22,.78].map((t,i)=>{const b=medBerth(t,'inboard30');return npc('med-neighbour-'+i,b.x,b.y,b.heading,'inboard30')});
+  const gasNeighbours=[npc('fuel-west',4.30,4.72,0,'bowrider21'),npc('fuel-east',4.79,4.72,0,'bowrider21')];
+  const crowdedNorth=[npc('north-yacht-west',.86,5.14,270,'motorYacht42'),npc('north-yacht-east',1.15,5.14,270,'motorYacht42')];
+  const mapping={
+    gasDockArrival:{name:'Gas Dock Arrival',spawn:[4.55,5.5,270],target:berth(4.35,4.70,.4,.075,'C · GAS DOCK'),description:'In calm water, approach the south face of the broad fuel pier. Settle alongside and secure with two lines.',obstacles:[]},
+    crowdedGasDeparture:{spawn:[4.545,4.72,0],target:berth(4.1,5.3,.9,.4,'OPEN BASIN',true),description:'Cast off from the fuel pier between boats ahead and astern. Use lines and twin-engine manoeuvring to reach the open basin.',obstacles:gasNeighbours},
+    doubleTCrosswind:{name:'Finger Slip Crosswind',spawn:[1.9,4.15,270],target:berth(1.657,3.25,.08,.105,'A · FINGER SLIP'),description:'Bring the single-engine bowrider into an A-section finger slip in a 10 kt crosswind, then secure with two lines.',obstacles:[npc('a-west',1.50,3.30,270,'bowrider21'),npc('a-east',1.90,3.30,270,'bowrider21')]},
+    westSlipCrossCurrent:{name:'West Pier Cross-Current',spawn:[3.55,3.95,270],target:berth(3.935,2.85,.055,.30,'C · WEST PIER'),description:'Bring the 31 ft cruiser alongside the west face of the long fuel jetty in wind and cross-current. Hold position and secure with two lines.',obstacles:[npc('west-neighbour',3.9625,2.5,270,'inboard30')]},
+    doubleTTightDeparture:{name:'Big Yacht Tight Departure',spawn:[1.005,5.14,270],target:berth(1.3,4.1,.65,.35,'CLEAR FAIRWAY',true),description:'Cast off the 55 ft yacht from an E-section large-boat slip between neighbours. Use engines and bow thruster to clear the berth in strong wind and current.',obstacles:crowdedNorth},
+    gasDockSqueeze:{spawn:[4.55,5.45,270],target:berth(4.47,4.70,.15,.07,'C · FUEL GAP'),description:'Place the single-engine bowrider between two boats at the fuel pier in strong wind and current. Secure with two lines.',obstacles:[npc('squeeze-west',4.40,4.72,0,'bowrider21'),npc('squeeze-east',4.69,4.72,0,'bowrider21')]},
+    liveTrafficDeparture:{spawn:[4.545,4.72,0],target:berth(6.23,7.76,.4,.5,'F · SOUTH EXIT',true),description:'Cast off from the fuel pier, yield to a departing boat, and make your way down the eastern fairway to the marina entrance.',obstacles:gasNeighbours},
+    medWindyArrival:{spawn:[4.25,6.85,105],target:berth(med.x-.07,med.y-.08,.14,.16,'D · MED BERTH'),description:'Approach the diagonal Med quay in a crosswind. Drop anchor, reverse stern-to, and attach the paired stern lines.',obstacles:medNeighbours},
+    medCrowdedYachtDeparture:{spawn:[medYacht.x,medYacht.y,285],target:berth(6.23,7.76,.4,.5,'F · SOUTH EXIT',true),description:'Release the paired stern lines, recover the anchor, and guide the 55 ft yacht past neighbouring boats and through the entrance.',obstacles:medNeighbours,startAnchor:{x:medYacht.x+.05,y:medYacht.y-.31,slackFt:2,mode:'deployed'}},
+    precisionAnchorDrop:{spawn:[4.3,6.70,105],target:berth(medSmall.x-.065,medSmall.y-.075,.13,.15,'D · MED BERTH'),anchorDropZone:berth(medSmall.x-.025,medSmall.y-.43,.13,.18,'DROP ANCHOR'),description:'Drop the anchor inside the orange zone, then reverse the twin-inboard cruiser between neighbours to the diagonal Med quay and attach paired stern lines.',obstacles:medNeighbours}
+  };
+  for(const [key,config] of Object.entries(mapping)){
+    const level=LEVELS[key];level.marina='largeMarina';level.spawnId=levelSpawn('challenge-'+key,...config.spawn);
+    level.target=config.target;level.description=config.description;if(config.name)level.name=config.name;
+    level.obstacleLayout=config.obstacles;level.levelObstacles=[];
+    level.otherBoats=config.obstacles.length?'medium':'none';
+    if(config.anchorDropZone)level.anchorDropZone=config.anchorDropZone;
+    if(config.startAnchor)level.startAnchor=config.startAnchor;
+    if(key==='crowdedGasDeparture')level.startFenders='port';
+  }
+  MOVING_TRAFFIC_ROUTES.largeMarina=[{id:'challenge-departure',level:3,boatKey:'bowrider21',speedKt:2.4,behavior:'exit',points:[[5.4,5.0],[5.4,5.55],[6.35,6.4],[6.4,7.4],[6.4,8.5],[6.4,8.9]]}];
+
   function activeBoat(){ return BOATS[activeBoatKey]; }
   function activeMarina(){ return MARINAS[activeMarinaKey]; }
   function activeScenario(){ return SCENARIOS[activeScenarioKey]; }
@@ -1928,7 +1967,7 @@ body.sim-mode{
     }
     for(const p of m.dockPolygons||[]){
       const points=p.points.map(([x,y])=>`${x*1000},${y*600+worldShiftY}`).join(' ');
-      const polyClass=preview?dockClass:(p.className||dockClass);
+      const polyClass=preview?dockClass:(m===MARINAS.largeMarina && ['poly1','poly2'].includes(p.id)?'entranceBreakwall':(p.className||dockClass));
       parts.push(`<polygon class="${polyClass}" points="${points}"/>`);
     }
     for(const a of m.solidAreas||[]){
@@ -2258,15 +2297,26 @@ body.sim-mode{
     if(marinaTexturesReady)return;
     marinaTexturesReady=true;
 let seed=42;function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
-function tile(kind){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');g.fillStyle={water:'#236978',wood:'#ac8f69',grass:'#638154',concrete:'#a6a7a0',stone:'#767d7a'}[kind];g.fillRect(0,0,256,256);for(let i=0;i<7500;i++){g.fillStyle=rand()>.5?'rgba(255,255,230,.065)':'rgba(0,15,20,.085)';g.fillRect(rand()*256,rand()*256,rand()*2+1,rand()*2+1)}if(kind==='water'){
+function tile(kind){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');g.fillStyle={water:'#236978',wood:'#ac8f69',grass:'#638154',concrete:'#a6a7a0',stone:'#767d7a',cobble:'#454a48'}[kind];g.fillRect(0,0,256,256);for(let i=0;i<7500;i++){g.fillStyle=rand()>.5?'rgba(255,255,230,.065)':'rgba(0,15,20,.085)';g.fillRect(rand()*256,rand()*256,rand()*2+1,rand()*2+1)}if(kind==='water'){
 // Irregular, world-anchored wavelets with a dark trough and bright crest.
 for(let i=0;i<135;i++){const x=rand()*256,y=rand()*256,len=8+rand()*29,bend=1+rand()*3;
 g.lineWidth=.8+rand()*1.2;g.strokeStyle='rgba(5,35,46,.43)';g.beginPath();g.moveTo(x,y+2);g.bezierCurveTo(x+len*.3,y-bend+2,x+len*.7,y+bend+2,x+len,y+2);g.stroke();
 g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveTo(x+len*.3,y-bend,x+len*.7,y+bend,x+len,y);g.stroke();}
-}if(kind==='wood'){for(let y=0;y<256;y+=12){g.fillStyle='rgba(32,28,18,.45)';g.fillRect(0,y,256,1);g.fillStyle='rgba(245,228,186,.25)';g.fillRect(0,y+1,256,1);for(let i=0;i<8;i++){g.fillStyle='rgba(46,36,21,.12)';g.fillRect(rand()*256,y+rand()*10+1,20+rand()*80,.7)}for(let x=(y%24?64:0);x<256;x+=128){g.fillStyle='#62543f';g.fillRect(x,y,1,12);g.fillRect(x+4,y+3,1,1);g.fillRect(x+4,y+9,1,1)}}}if(kind==='concrete'){g.strokeStyle='rgba(44,53,52,.24)';for(let x=0;x<256;x+=64){g.beginPath();g.moveTo(x,0);g.lineTo(x,256);g.moveTo(0,x);g.lineTo(256,x);g.stroke()}}if(kind==='stone'){for(let i=0;i<130;i++){g.fillStyle=['#8b9189','#656d68','#a0a298'][i%3];g.beginPath();g.ellipse(rand()*256,rand()*256,4+rand()*9,3+rand()*6,rand()*6,0,7);g.fill();g.strokeStyle='#59635e';g.stroke()}}return c.toDataURL('image/png')}
+}if(kind==='wood'){for(let y=0;y<256;y+=12){g.fillStyle='rgba(32,28,18,.45)';g.fillRect(0,y,256,1);g.fillStyle='rgba(245,228,186,.25)';g.fillRect(0,y+1,256,1);for(let i=0;i<8;i++){g.fillStyle='rgba(46,36,21,.12)';g.fillRect(rand()*256,y+rand()*10+1,20+rand()*80,.7)}for(let x=(y%24?64:0);x<256;x+=128){g.fillStyle='#62543f';g.fillRect(x,y,1,12);g.fillRect(x+4,y+3,1,1);g.fillRect(x+4,y+9,1,1)}}}if(kind==='concrete'){g.strokeStyle='rgba(44,53,52,.24)';for(let x=0;x<256;x+=64){g.beginPath();g.moveTo(x,0);g.lineTo(x,256);g.moveTo(0,x);g.lineTo(256,x);g.stroke()}}if(kind==='stone'){for(let i=0;i<130;i++){g.fillStyle=['#8b9189','#656d68','#a0a298'][i%3];g.beginPath();g.ellipse(rand()*256,rand()*256,4+rand()*9,3+rand()*6,rand()*6,0,7);g.fill();g.strokeStyle='#59635e';g.stroke()}}if(kind==='cobble'){
+  // Chunky staggered stones, pixel-sized facets and dark joints.
+  g.fillStyle='#454a48';g.fillRect(0,0,256,256);
+  for(let row=0;row<8;row++)for(let col=-1;col<9;col++){
+    const x=col*32+(row%2)*16,y=row*32,tone=98+Math.floor(rand()*40);
+    g.fillStyle='rgb('+tone+','+(tone+3)+','+tone+')';
+    g.beginPath();g.moveTo(x+6,y+3);g.lineTo(x+26,y+3);g.lineTo(x+29,y+7);g.lineTo(x+29,y+24);g.lineTo(x+24,y+29);g.lineTo(x+6,y+29);g.lineTo(x+3,y+24);g.lineTo(x+3,y+7);g.closePath();g.fill();
+    g.fillStyle='rgba(225,230,218,.28)';g.fillRect(x+7,y+4,17,3);g.fillRect(x+4,y+8,3,15);
+    g.fillStyle='rgba(20,27,24,.3)';g.fillRect(x+8,y+25,16,3);g.fillRect(x+25,y+8,3,16);
+    for(let j=0;j<9;j++){g.fillStyle=rand()>.5?'rgba(233,235,219,.16)':'rgba(25,30,28,.23)';g.fillRect(x+8+Math.floor(rand()*4)*4,y+8+Math.floor(rand()*4)*4,4,4)}
+  }
+}return c.toDataURL('image/png')}
 
     const svg=document.getElementById('dockMap'),defs=svg.querySelector('defs');
-    for(const kind of ['water','wood','grass','concrete','stone']){
+    for(const kind of ['water','wood','grass','concrete','stone','cobble']){
       const p=document.createElementNS('http://www.w3.org/2000/svg','pattern');
       p.id='marinaTexture-'+kind;p.setAttribute('width','256');p.setAttribute('height','256');p.setAttribute('patternUnits','userSpaceOnUse');
       const image=document.createElementNS('http://www.w3.org/2000/svg','image');
@@ -2496,6 +2546,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
   let cameraView={initialized:false,x:0,y:0,a:0,vx:0,vy:0,va:0};
   let cameraOverview=false;
   let cameraClose=false;
+  let cameraWide=false;
   let cameraLast=performance.now();
   const wrapAngle=a=>((a+180)%360+360)%360-180;
   // Exact critically damped spring update: frame-rate independent, no hard threshold.
@@ -2522,7 +2573,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     } else {
       rotation=-90-cameraView.a;
       const normalScale=Math.min(vp.width,vp.height)/690;
-      scale=normalScale*(cameraClose?1.45:1);
+      scale=normalScale*(cameraClose?1.45:cameraWide?.4:1);
       centerX=cameraView.x;
       centerY=cameraView.y;
     }
@@ -2596,6 +2647,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
 
   function showSimulator(){
     setScreenMode('sim-mode');
+    document.getElementById('quickSpawn').disabled=activeGameMode==='play';
     if(activeGameMode==='practice'){
       hasStarted=true;
       if(resumeSimBtn) resumeSimBtn.style.display='block';
@@ -3032,6 +3084,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     if(!level || !pointInLevelTarget(level)) return;
 
     if(level.type==='departure'){
+      if(effectiveActiveLineCount()>0 || anchorState.mode!=='stowed')return;
       completeLevel();
       return;
     }
@@ -3054,7 +3107,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
     const marina=MARINAS[level.marina];
     if(!marina) return '';
 
-    const parts=[`<rect class="thumbWater" x="0" y="0" width="1000" height="600"/>`];
+    const parts=[`<rect class="thumbWater" x="0" y="0" width="7655.29" height="5249.34"/>`];
 
     for(const land of marina.landPolygons||[]){
       const pts=land.points.map(([x,y])=>`${x*1000},${y*600}`).join(' ');
@@ -3073,10 +3126,12 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
       parts.push(`<circle class="thumbPiling" cx="${x*1000}" cy="${y*600}" r="6"/>`);
     }
 
+    for(const p of marina.dockPolygons||[]){parts.push(`<polygon class="thumbDock" points="${p.points.map(([x,y])=>`${x*1000},${y*600}`).join(' ')}"/>`)}
+    if(level.anchorDropZone){const z=level.anchorDropZone;parts.push(`<rect class="thumbTarget" x="${z.x*1000}" y="${z.y*600}" width="${z.w*1000}" height="${z.h*600}" style="fill:#d9953866;stroke:#f4b85a"/>`)}
     // Show the same configured obstacle density used by the level, plus
     // any level-specific challenge boats.
     const thumbObstacles=[
-      ...plannedObstacleSlots(level.marina,level.spawnId,level.otherBoats||'none'),
+      ...(level.obstacleLayout||plannedObstacleSlots(level.marina,level.spawnId,level.otherBoats||'none')),
       ...(level.levelObstacles||[])
     ];
     for(const slot of thumbObstacles){
@@ -3107,7 +3162,7 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
       parts.push(`<circle class="thumbSpawn" cx="${cx}" cy="${cy}" r="11"/>`);
     }
 
-    return `<svg viewBox="0 0 1000 600" preserveAspectRatio="none" aria-hidden="true">${parts.join('')}</svg>`;
+    return `<svg viewBox="0 0 7655.29 5249.34" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${parts.join('')}</svg>`;
   }
 
   function renderLevelCards(){
@@ -4787,16 +4842,18 @@ g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveT
   let cameraZoomLevel='med';
   if(zoomToggle){
     zoomToggle.onclick=()=>{
-      cameraZoomLevel=cameraZoomLevel==='med'?'high':cameraZoomLevel==='high'?'low':'med';
+      const zoomLevels=['high','med','wide','low'];
+      cameraZoomLevel=zoomLevels[(zoomLevels.indexOf(cameraZoomLevel)+1)%zoomLevels.length];
       cameraOverview=cameraZoomLevel==='low';
       cameraClose=cameraZoomLevel==='high';
-      zoomToggle.textContent=`Zoom: ${cameraZoomLevel==='med'?'Med':cameraZoomLevel==='high'?'High':'Low'}`;
+      cameraWide=cameraZoomLevel==='wide';
+      zoomToggle.textContent=`Zoom: ${cameraZoomLevel==='med'?'Med':cameraZoomLevel==='high'?'High':cameraZoomLevel==='wide'?'Wide':'Low'}`;
       zoomToggle.classList.toggle('active',cameraZoomLevel!=='med');
       cameraView.initialized=false;
       updateCamera(true);
     };
   }
-  populateSetupControls();renderMarina();applyScenario(activeScenarioKey);showSimulator();
+  populateSetupControls();renderMarina();applyScenario(activeScenarioKey);showHomeScreen();
   render();
   window.mvp={get state(){return state},physics,render,collisionInfoAt,activeMarina,activeBoat,updateCamera,get camera(){return cameraView}};
   requestAnimationFrame(loop);
