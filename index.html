@@ -863,6 +863,13 @@ body.sim-mode{
 #zoomToggle,#miniMapToggle{background:#193a49;color:#eef6f7;padding:5px 9px;border:1px solid #627d86;border-radius:4px;font-weight:700;cursor:pointer}#zoomToggle.active,#miniMapToggle.active{background:#e5eef1;color:#17333a;border-color:#a8bbc2}
 #cameraToggle,#playModeBtn,#instructionsModeBtn,#homeFromSetup{display:none!important}
 @media(max-width:600px){#miniPanel{width:115px;}#cameraTools{gap:5px;flex-wrap:nowrap;}#quickSpawn{max-width:135px}}
+
+/* Small cached procedural tiles, anchored to the existing world SVG. */
+#worldLayer{background-image:none}
+#dockMap .dockShape,#dockMap .piling{fill:url(#marinaTexture-wood)}
+#dockMap .landShape{fill:url(#marinaTexture-grass)}
+#dockMap .medConcrete,#dockMap .medGas,#dockMap .gasDock{fill:url(#marinaTexture-concrete)}
+#dockMap .medStone,#dockMap .shoreRock{fill:url(#marinaTexture-stone)}
 </style>
 </head>
 <body class="photo-marina">
@@ -1139,7 +1146,7 @@ body.sim-mode{
 
       <div class="card cameraLagCard">
         <div class="cameraLagLabel"><span>Camera catch-up</span><output id="lagVal">1.00 s</output></div>
-        <input aria-label="Camera catch-up time" id="cameraLag" type="range" min="0.5" max="3" step="0.05" value="1">
+        <input aria-label="Camera catch-up time" id="cameraLag" type="range" min="0.5" max="5" step="0.05" value="1">
       </div>
 
     </div>
@@ -1905,6 +1912,7 @@ body.sim-mode{
     const worldShiftY=0;
     const landClass=preview?'miniLand':'landShape';
     const rockClass=preview?'miniRock':'shoreRock';
+    const concreteDockIds=new Set(['dock134','dock135','dock136','dock137','dock138','dock139','dock140']);
     const dockClass=preview?'miniDock':'dockShape';
     const pilingClass=preview?'miniPiling':'piling';
     const labelClass=preview?'miniLabel':'dockLabel';
@@ -1916,7 +1924,7 @@ body.sim-mode{
       parts.push(`<circle class="${rockClass}" cx="${cx}" cy="${cy+worldShiftY}" r="${preview?Math.max(4,r*0.72):r}"/>`);
     }
     for(const d of m.docks){
-      parts.push(`<rect class="${dockClass}" x="${d.x*1000}" y="${d.y*600+worldShiftY}" width="${d.w*1000}" height="${d.h*600}"/>`);
+      parts.push(`<rect class="${!preview && concreteDockIds.has(d.id)?'medConcrete':dockClass}" x="${d.x*1000}" y="${d.y*600+worldShiftY}" width="${d.w*1000}" height="${d.h*600}"/>`);
     }
     for(const p of m.dockPolygons||[]){
       const points=p.points.map(([x,y])=>`${x*1000},${y*600+worldShiftY}`).join(' ');
@@ -1933,6 +1941,17 @@ body.sim-mode{
       const ly=l.y+worldShiftY;
       const transform=l.rotate?` transform="rotate(${l.rotate} ${l.x} ${ly})"`:'';
       parts.push(`<text class="${preview?labelClass:(l.className||'dockLabel')}" x="${l.x}" y="${ly}"${transform}>${l.text}</text>`);
+    }
+    if(!preview && m===MARINAS.largeMarina){
+      parts.push(`<g aria-hidden="true" style="pointer-events:none" filter="url(#dockShadow)">
+        <rect x="4318" y="2288" width="436" height="296" fill="#303e43"/>
+        <path d="M4326 2296H4746L4681 2436H4391Z" fill="#72858b" stroke="#344850" stroke-width="2"/>
+        <path d="M4326 2576H4746L4681 2436H4391Z" fill="#43585f" stroke="#344850" stroke-width="2"/>
+        <path d="M4326 2296L4391 2436L4326 2576Z" fill="#61777f"/>
+        <path d="M4746 2296L4681 2436L4746 2576Z" fill="#384c53"/>
+        ${Array.from({length:16},(_,i)=>'<path d="M'+(4396+i*18)+' 2296V2576" stroke="#ddeeeC" stroke-opacity=".2" stroke-width="2"/>').join('')}
+        <path d="M4391 2436H4681" stroke="#a6b5b5" stroke-width="5"/>
+      </g>`);
     }
     // Visual guidance only: excluded from dock, piling and collision collections.
     // Align the label with the Med-quay/anchor-guide run instead of the screen bottom.
@@ -2233,7 +2252,40 @@ body.sim-mode{
     document.body.classList.toggle('photo-marina', !!nextSrc);
   }
 
+
+  let marinaTexturesReady=false;
+  function initializeMarinaTextures(){
+    if(marinaTexturesReady)return;
+    marinaTexturesReady=true;
+let seed=42;function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function tile(kind){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');g.fillStyle={water:'#236978',wood:'#ac8f69',grass:'#638154',concrete:'#a6a7a0',stone:'#767d7a'}[kind];g.fillRect(0,0,256,256);for(let i=0;i<7500;i++){g.fillStyle=rand()>.5?'rgba(255,255,230,.065)':'rgba(0,15,20,.085)';g.fillRect(rand()*256,rand()*256,rand()*2+1,rand()*2+1)}if(kind==='water'){
+// Irregular, world-anchored wavelets with a dark trough and bright crest.
+for(let i=0;i<135;i++){const x=rand()*256,y=rand()*256,len=8+rand()*29,bend=1+rand()*3;
+g.lineWidth=.8+rand()*1.2;g.strokeStyle='rgba(5,35,46,.43)';g.beginPath();g.moveTo(x,y+2);g.bezierCurveTo(x+len*.3,y-bend+2,x+len*.7,y+bend+2,x+len,y+2);g.stroke();
+g.strokeStyle='rgba(167,220,211,.34)';g.beginPath();g.moveTo(x,y);g.bezierCurveTo(x+len*.3,y-bend,x+len*.7,y+bend,x+len,y);g.stroke();}
+}if(kind==='wood'){for(let y=0;y<256;y+=12){g.fillStyle='rgba(32,28,18,.45)';g.fillRect(0,y,256,1);g.fillStyle='rgba(245,228,186,.25)';g.fillRect(0,y+1,256,1);for(let i=0;i<8;i++){g.fillStyle='rgba(46,36,21,.12)';g.fillRect(rand()*256,y+rand()*10+1,20+rand()*80,.7)}for(let x=(y%24?64:0);x<256;x+=128){g.fillStyle='#62543f';g.fillRect(x,y,1,12);g.fillRect(x+4,y+3,1,1);g.fillRect(x+4,y+9,1,1)}}}if(kind==='concrete'){g.strokeStyle='rgba(44,53,52,.24)';for(let x=0;x<256;x+=64){g.beginPath();g.moveTo(x,0);g.lineTo(x,256);g.moveTo(0,x);g.lineTo(256,x);g.stroke()}}if(kind==='stone'){for(let i=0;i<130;i++){g.fillStyle=['#8b9189','#656d68','#a0a298'][i%3];g.beginPath();g.ellipse(rand()*256,rand()*256,4+rand()*9,3+rand()*6,rand()*6,0,7);g.fill();g.strokeStyle='#59635e';g.stroke()}}return c.toDataURL('image/png')}
+
+    const svg=document.getElementById('dockMap'),defs=svg.querySelector('defs');
+    for(const kind of ['water','wood','grass','concrete','stone']){
+      const p=document.createElementNS('http://www.w3.org/2000/svg','pattern');
+      p.id='marinaTexture-'+kind;p.setAttribute('width','256');p.setAttribute('height','256');p.setAttribute('patternUnits','userSpaceOnUse');
+      const image=document.createElementNS('http://www.w3.org/2000/svg','image');
+      image.setAttribute('width','256');image.setAttribute('height','256');image.setAttribute('href',tile(kind));p.appendChild(image);defs.appendChild(p);
+    }
+    const waterGroup=document.createElementNS('http://www.w3.org/2000/svg','g');waterGroup.setAttribute('aria-hidden','true');
+    waterGroup.innerHTML='<rect width="7655.29" height="5249.34" fill="url(#marinaTexture-water)"/>';
+    seed=7301;
+    for(let i=0;i<190;i++){
+      const x=rand()*8000,y=rand()*5600,r=90+rand()*200,id='waterVariation'+i;
+      const gradient=document.createElementNS('http://www.w3.org/2000/svg','radialGradient');gradient.id=id;
+      gradient.innerHTML='<stop offset="0" stop-color="'+(i%2?'#062331':'#5ba09d')+'" stop-opacity="'+(i%2?'.22':'.16')+'"/><stop offset="1" stop-color="#236978" stop-opacity="0"/>';defs.appendChild(gradient);
+      const patch=document.createElementNS('http://www.w3.org/2000/svg','circle');patch.setAttribute('cx',x);patch.setAttribute('cy',y);patch.setAttribute('r',r);patch.setAttribute('fill','url(#'+id+')');waterGroup.appendChild(patch);
+    }
+    svg.insertBefore(waterGroup,document.getElementById('marinaVisuals'));
+  }
+
   function renderMarina(){
+    initializeMarinaTextures();
     const m=activeMarina();
     const g=document.getElementById('marinaVisuals');
     const dockMap=document.getElementById('dockMap');
